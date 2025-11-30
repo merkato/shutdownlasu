@@ -1,6 +1,6 @@
 # configure locales
-locale-gen pl_PL.UTF-8 #replace fr with your language
-dpkg-reconfigure locales
+\n locale-gen pl_PL.UTF-8 #replace fr with your language
+dpkg-reconfigure locales \n
 # u mnie nie poszło
 # define your timezone [useful for logs]
 dpkg-reconfigure tzdata
