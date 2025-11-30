@@ -10,12 +10,13 @@ dpkg-reconfigure tzdata
 sudo apt-get install ntp ntpdate
 ```
 
-# Instalacja serwera HTTP nginx
+# Instalacja serwera HTTP 
 ```
 sudo apt-get update # update packages list
-sudo apt-get install curl openssl libssl3 nginx-full nginx nginx-common
-sudo apt-get install spawn-fcgi
+sudo apt-get install curl openssl libssl3
+sudo apt-get install python3-venv python3-psutil
 ```
+
 ## Instalacja PHP
 ```
 apt install php8.4-cli php8.4-fpm php8.4-bz2 php8.4-curl php8.4-gd php8.4-intl php8.4-mbstring php8.4-pgsql php8.4-sqlite3 php8.4-xml php8.4-ldap php8.4-redis
