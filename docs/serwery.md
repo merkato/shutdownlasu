@@ -27,3 +27,6 @@ sudo apt-get install postgresql-contrib  pgtune
 # Miejsce na dane serwera QGIS
 mkdir /home/data
 mkdir /home/data/cache/
+
+sudo wget -O /etc/apt/keyrings/qgis-archive-keyring.gpg https://download.qgis.org/downloads/qgis-archive-keyring.gpg
+# Uzupełnij /etc/apt/sources.list.d/qgis.sources
