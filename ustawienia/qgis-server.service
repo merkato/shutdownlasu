@@ -1,0 +1,18 @@
+[Unit]
+Description=QGIS server
+After=network.target
+
+[Service]
+;; set env var as needed
+;Environment="LANG=en_EN.UTF-8"
+;Environment="QGIS_SERVER_PARALLEL_RENDERING=1"
+;Environment="QGIS_SERVER_MAX_THREADS=12"
+;Environment="QGIS_SERVER_LOG_LEVEL=0"
+;Environment="QGIS_SERVER_LOG_STDERR=1"
+;; or use a file:
+;EnvironmentFile=/etc/qgis-server/env
+
+ExecStart=spawn-fcgi -s /var/run/qgisserver.socket -U www-data -G www-data -n /usr/lib/cgi-bin/qgis_mapserv.fcgi
+
+[Install]
+WantedBy=multi-user.target
