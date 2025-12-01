@@ -13,8 +13,7 @@ sudo apt-get install ntp ntpdate
 # Instalacja serwera HTTP 
 ```
 sudo apt-get update # update packages list
-sudo apt-get install curl openssl libssl3
-sudo apt-get install python3-venv python3-psutil
+sudo apt-get install curl openssl libssl3 certbot python3-certbot-nginx nginx
 ```
 
 ## Instalacja PHP
@@ -27,9 +26,11 @@ Teraz przygotuj plik lizmap.conf, wyedytuj ustawienia a następnie zrób symlink
 sudo ln -s /etc/nginx/sites-available/lizmap.conf /etc/nginx/sites-enabled/lizmap.conf
 ```
 
-Gotowi do wystartowania nginx
+
+Gotowi do wystartowania nginx i wygenerowania certyfikatu
 ```
 sudo service nginx restart
+sudo certbot --nginx -d webgis.giswgorach.pl
 ```
 
 # Instalacja i uruchomienie bazy danych Postgresql
@@ -48,9 +49,9 @@ mkdir /home/data
 mkdir /home/data/cache/
 ```
 ## Instalacja QGIS Server
+Uzupełnij /etc/apt/sources.list.d/qgis.sources zgodnie z instrukcją na stronie qgis.org
 ```
 sudo wget -O /etc/apt/keyrings/qgis-archive-keyring.gpg https://download.qgis.org/downloads/qgis-archive-keyring.gpg
-# Uzupełnij /etc/apt/sources.list.d/qgis.sources
 sudo apt-get update
 sudo apt-get install qgis-server
 ```
