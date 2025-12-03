@@ -1,0 +1,29 @@
+[Unit]
+Description=QGIS server
+After=network.target
+
+[Service]
+Type=simple
+
+ExecStart=/opt/local/py-qgis-server/bin/qgisserver -c /srv/qgis/server.conf
+
+# FIXME it is recommended to have a script *synchronous*, which is not the case here
+ExecReload=/usr/bin/qgis-reload
+
+KillMode=control-group
+KillSignal=SIGTERM
+TimeoutStopSec=10
+
+Restart=always
+
+StandardOutput=append:/var/log/qgis/qgis-server.log
+StandardError=inherit
+SyslogIdentifier=qgis
+
+EnvironmentFile=/srv/qgis/config/qgis-service.env
+User=root
+
+LimitNOFILE=4096
+
+[Install]
+WantedBy=multi-user.target
