@@ -37,6 +37,15 @@ Utwórz plik /usr/bin/qgis-reload - szablon w /ustawienia/qgis-reload a następn
 ```
 chmod 750 /usr/bin/qgis-reload
 ```
+Utwórz /srv/qgis/server.conf - szablon w /ustawienia/server.conf (zwróć uwagę poniżej)
+
+```
+QGIS Server will be available at http://127.0.0.1:7200/ows/
+the plugins are installed in /srv/qgis/plugins (pluginpath). See QGIS Server plugins.
+the file to watch for restarting workers is /var/lib/py-qgis-server/py-qgis-restartmon (restartmon).
+the directory containing the projects to be published /srv/data (rootdir). The projects must be in sub-folders.
+Lizmap QGIS Server API is enabled
+```
 
 
 
