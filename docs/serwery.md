@@ -33,7 +33,12 @@ sudo mkdir -p /srv/qgis/plugins /srv/qgis/config /srv/data /var/log/qgis /var/li
 sudo touch /var/lib/py-qgis-server/py-qgis-restartmon
 sudo chmod 664 /var/lib/py-qgis-server/py-qgis-restartmon
 ```
-Utwórz plik /usr/bin/qgis-reload - szablon w 
+Utwórz plik /usr/bin/qgis-reload - szablon w /ustawienia/qgis-reload a następnie uczyń go wykonywalnym
+```
+chmod 750 /usr/bin/qgis-reload
+```
+
+
 
 ## Instalacja PHP
 ```
