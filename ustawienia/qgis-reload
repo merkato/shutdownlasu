@@ -1,0 +1,3 @@
+#!/bin/bash
+
+touch /var/lib/py-qgis-server/py-qgis-restartmon
