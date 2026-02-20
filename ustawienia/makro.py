@@ -224,11 +224,13 @@ class PanelWylaczenia(QWidget):
         self.in_teryt.setPlaceholderText("TERYT np. 140607_2.0001.123")
         self.in_znak.setPlaceholderText("Znak np. ZS.224.2.310.2025")
         self.in_pow.setPlaceholderText("Powierzchnia opisowa (ha)")
-        
+        self.btn_get_teryt_map = QPushButton("Pobierz TERYT z mapy")
+        self.btn_get_teryt_map.setStyleSheet("background-color: #e1f5fe; font-weight: bold;")
+        self.btn_get_teryt_map.clicked.connect(self.activate_teryt_tool)
         fl_imp.addRow("TERYT:", self.in_teryt)
         fl_imp.addRow("Znak sprawy:", self.in_znak)
         fl_imp.addRow("Pow. (ha):", self.in_pow)
-        
+        fl_imp.insertRow(1, "Lokalizuj:", self.btn_get_teryt_map)
         self.btn_uldk = QPushButton("Pobierz z ULDK (+Automat Ls)")
         self.btn_uldk.setStyleSheet("background-color: #d1ffd1; font-weight: bold; padding: 5px;")
         fl_imp.addRow(self.btn_uldk)
@@ -341,6 +343,75 @@ class PanelWylaczenia(QWidget):
         self.layout_glowny.addWidget(scroll)
 
     # --- METODY POMOCNICZE ---
+    def activate_teryt_tool(self):
+        """Włącza narzędzie wyboru punktu na mapie."""
+        from qgis.gui import QgsMapToolEmitPoint
+        
+        self.canvas = iface.mapCanvas()
+        self.teryt_tool = QgsMapToolEmitPoint(self.canvas)
+        self.teryt_tool.canvasClicked.connect(self.handle_map_click_for_teryt)
+        self.canvas.setMapTool(self.teryt_tool)
+        iface.messageBar().pushMessage("ULDK", "Kliknij wewnątrz działki, aby pobrać TERYT", level=Qgis.Info, duration=3)
+    
+    def handle_map_click_for_teryt(self, point):
+        """
+        Pobiera TERYT z GUGiK na podstawie kliknięcia, obsługując wieloliniowe 
+        odpowiedzi serwera i czyszcząc techniczne statusy.
+        """
+        import urllib.request
+        from qgis.core import QgsCoordinateReferenceSystem, QgsCoordinateTransform, QgsProject
+        
+        # Powrót do standardowego narzędzia (rączki) po kliknięciu
+        self.canvas.unsetMapTool(self.teryt_tool)
+        
+        # 1. Transformacja współrzędnych do EPSG:2180 (standard ULDK)
+        crs_src = self.canvas.mapSettings().destinationCrs()
+        crs_2180 = QgsCoordinateReferenceSystem("EPSG:2180")
+        transform = QgsCoordinateTransform(crs_src, crs_2180, QgsProject.instance())
+        
+        pt_2180 = transform.transform(point)
+        
+        # Debugowanie współrzędnych w konsoli QGIS
+        print(f"DEBUG: Kliknięcie w {crs_src.authid()} -> 2180: X={pt_2180.x()}, Y={pt_2180.y()}")
+        
+        try:
+            # 2. Budowa URL zgodnie z dokumentacją GetParcelByXY
+            url = (
+                f"https://uldk.gugik.gov.pl/?request=GetParcelByXY"
+                f"&xy={pt_2180.x()},{pt_2180.y()}"
+                f"&result=id"
+            )
+            
+            print(f"DEBUG: Wysłany URL: {url}")
+            
+            # 3. Pobranie i parsowanie odpowiedzi
+            res = urllib.request.urlopen(url, timeout=5).read().decode('utf-8')
+            
+            # Rozbicie na linie i usunięcie pustych (często pierwsza linia to '0', a druga to TERYT)
+            lines = [line.strip() for line in res.splitlines() if line.strip()]
+            
+            print(f"DEBUG: Odpowiedź serwera (linie): {lines}")
+
+            if lines:
+                # Interesuje nas ostatnia linia, bo tam ULDK zwraca właściwy identyfikator
+                raw_data = lines[-1]
+                
+                # Usuwamy ewentualną geometrię lub nazwy po średniku/spacji
+                clean_teryt = raw_data.split(';')[0].split(' ')[0].strip()
+                
+                # 4. Walidacja wyniku (ID działki ma zazwyczaj min. 14 znaków)
+                if len(clean_teryt) > 5 and not clean_teryt.startswith('-1') and "Error" not in clean_teryt:
+                    # Wpisanie do pola tekstowego w widgecie
+                    self.in_teryt.setText(clean_teryt)
+                    iface.messageBar().pushMessage("ULDK", f"Pobrano TERYT: {clean_teryt}", level=Qgis.Success)
+                else:
+                    QMessageBox.warning(self, "ULDK", f"Nie odnaleziono poprawnej działki.\nSerwer zwrócił: {raw_data}")
+            else:
+                QMessageBox.warning(self, "ULDK", "Serwer zwrócił pustą odpowiedź.")
+                
+        except Exception as e:
+            QMessageBox.critical(self, "Błąd krytyczny", f"Błąd zapytania ULDK: {str(e)}")
+            
     def refresh_pg_materialized_view(self, view_name):
         """
         Odświeża widok zmaterializowany w PostgreSQL korzystając z pg_service.
@@ -549,99 +620,100 @@ class PanelWylaczenia(QWidget):
                             it_i.setFont(1, font)
 
     def run_uldk(self):
-        """
-        Pobiera geometrię z ULDK i tworzy strukturę Działka + Użytek (Ls).
-        Wymaga kompletu danych: TERYT, Znak sprawy, Powierzchnia.
-        """
-        # 1. Pobranie i oczyszczenie danych z pól tekstowych
+        """Pobiera geometrię z ULDK i tworzy strukturę obiektów korzystając z CONFIG."""
+        # 1. Pobranie i walidacja danych wejściowych
         t = self.in_teryt.text().strip()
         z = self.in_znak.text().strip()
-        p_raw = self.in_pow.text().replace(',', '.').strip() # Zamiana przecinka na kropkę
+        p_raw = self.in_pow.text().replace(',', '.').strip()
 
-        # 2. Walidacja kompletności danych
         if not t or not z or not p_raw:
-            QMessageBox.critical(
-                self, 
-                "Brak danych", 
-                "Aby pobrać działkę, musisz wypełnić wszystkie pola:\n"
-                "- Numer TERYT\n"
-                "- Znak sprawy\n"
-                "- Powierzchnia opisowa (ha)"
-            )
-            return
-
-        # 3. Próba konwersji powierzchni na liczbę
-        try:
-            powierzchnia = float(p_raw)
-        except ValueError:
-            QMessageBox.critical(self, "Błąd formatu", "Pole powierzchnia musi zawierać liczbę (np. 0.1234).")
+            QMessageBox.warning(self, "Brak danych", "Wypełnij TERYT, Znak sprawy i Powierzchnię opisową.")
             return
 
         try:
-            # 4. Zapytanie do usługi ULDK
+            pow_val = float(p_raw)
+            
+            # 2. Zapytanie do serwera GUGiK
             url = f"https://uldk.gugik.gov.pl/?request=GetParcelById&id={t}&result=geom_wkt"
             res = urllib.request.urlopen(url, timeout=10).read().decode('utf-8')
             
-            if 'not found' in res.lower() or not res.strip():
-                QMessageBox.warning(self, "ULDK", f"Nie znaleziono działki o numerze: {t}")
+            if ';' not in res:
+                QMessageBox.warning(self, "Błąd ULDK", f"Serwer nie zwrócił geometrii dla działki: {t}")
                 return
 
-            geom_wkt = res.split(';')[-1].strip()
-            geom = QgsGeometry.fromWkt(geom_wkt)
+            geom = QgsGeometry.fromWkt(res.split(';')[-1].strip())
+            if geom.isEmpty():
+                QMessageBox.warning(self, "Błąd geometrii", "Pobrana geometria jest pusta.")
+                return
 
             project = QgsProject.instance()
-            l_dz = project.mapLayersByName('Działki')[0]
-            l_uz = project.mapLayersByName('Użytki')[0]
 
-            # --- WŁĄCZENIE WIDOCZNOŚCI WARSTW (Zgodnie z nową zasadą) ---
+            # 3. Bezpieczne pobieranie warstw ze słownika CONFIG
+            l_parcels_list = project.mapLayersByName(CONFIG['layers']['parcels'])
+            l_usages_list = project.mapLayersByName(CONFIG['layers']['usages'])
+
+            if not l_parcels_list or not l_usages_list:
+                missing = []
+                if not l_parcels_list: missing.append(CONFIG['layers']['parcels'])
+                if not l_usages_list: missing.append(CONFIG['layers']['usages'])
+                QMessageBox.critical(self, "Błąd warstw", f"Nie znaleziono w projekcie warstw:\n- " + "\n- ".join(missing))
+                return
+
+            l_dz = l_parcels_list[0]
+            l_uz = l_usages_list[0]
+
+            # 4. Wymuszenie widoczności (nowy standard)
             root = project.layerTreeRoot()
             for lyr in [l_dz, l_uz]:
                 node = root.findLayer(lyr.id())
                 if node:
                     node.setItemVisibilityChecked(True)
+                    if node.parent(): node.parent().setItemVisibilityChecked(True)
 
-            # 5. Tworzenie obiektu w warstwie Działki
-            if not l_dz.isEditable(): 
-                l_dz.startEditing()
-                
+            # 5. Operacja na warstwie Działek
+            if not l_dz.isEditable(): l_dz.startEditing()
+            
             f_dz = QgsFeature(l_dz.fields())
             f_dz.setGeometry(geom)
             f_dz['teryt'] = t
             f_dz['znak_sprawy'] = z
-            f_dz['pow_ewid'] = powierzchnia # Tutaj ląduje nasza zwalidowana powierzchnia
+            f_dz[CONFIG['fields']['area_field']] = pow_val
             
             if l_dz.addFeature(f_dz):
                 l_dz.commitChanges()
                 
-                # 6. Pobranie nowej działki (żeby dostać jej klucz_dzialki wygenerowany przez bazę/QGIS)
-                dz_f = next(l_dz.getFeatures(QgsFeatureRequest().setFilterExpression(
-                    f"\"teryt\"='{t}' AND \"znak_sprawy\"='{z}'")), None)
+                # 6. Pobranie klucza nowej działki (UUID/Serial z bazy)
+                req = QgsFeatureRequest().setFilterExpression(f"\"teryt\"='{t}' AND \"znak_sprawy\"='{z}'")
+                dz_f = next(l_dz.getFeatures(req), None)
                 
                 if dz_f:
-                    # 7. Tworzenie obiektu w warstwie Użytki (domyślnie Ls)
-                    if not l_uz.isEditable(): 
-                        l_uz.startEditing()
+                    # 7. Operacja na warstwie Użytków
+                    if not l_uz.isEditable(): l_uz.startEditing()
                     
                     f_uz = QgsFeature(l_uz.fields())
                     f_uz.setGeometry(geom)
-                    f_uz['klucz_dzialki'] = dz_f['klucz_dzialki']
+                    # Powiązanie przez klucz ze słownika
+                    f_uz[CONFIG['fields']['parcel_key']] = dz_f[CONFIG['fields']['parcel_key']]
                     f_uz['teryt'] = t
                     f_uz['znak_sprawy'] = z
-                    f_uz['koduzytku'] = 'Ls'
+                    f_uz['koduzytku'] = 'Ls' # Zgodnie z ustaleniami: zawsze Ls
                     
-                    l_uz.addFeature(f_uz)
-                    l_uz.commitChanges()
-                    
-                    # 8. Sukces: zoom i odświeżenie drzewa
-                    l_dz.selectByIds([dz_f.id()])
-                    iface.mapCanvas().setExtent(geom.boundingBox())
-                    iface.mapCanvas().refresh()
-                    self.fetch_manual_data()
-                    
-                    iface.messageBar().pushMessage("Sukces", "Pobrano działkę i utworzono użytek Ls.", level=Qgis.Success)
-
+                    if l_uz.addFeature(f_uz):
+                        l_uz.commitChanges()
+                        
+                        # 8. Finalizacja widoku
+                        iface.mapCanvas().setExtent(geom.boundingBox())
+                        iface.mapCanvas().refresh()
+                        l_dz.selectByIds([dz_f.id()])
+                        self.fetch_manual_data() # Odświeżenie drzewa w panelu
+                        
+                        iface.messageBar().pushMessage("Sukces", "Pobrano działkę i utworzono użytek Ls.", level=Qgis.Success)
+                else:
+                    QMessageBox.warning(self, "Błąd relacji", "Działka została dodana, ale nie udało się pobrać jej klucza do stworzenia użytku.")
+            
         except Exception as e:
-            QMessageBox.critical(self, "Błąd krytyczny", f"Wystąpił problem podczas pobierania danych:\n{str(e)}")
+            # Tutaj już nie będzie "index out of range", chyba że brakuje pola w CONFIG
+            QMessageBox.critical(self, "Błąd krytyczny", f"Szczegóły błędu:\n{str(e)}")
         
     def add_child_to_selected(self):
         """
